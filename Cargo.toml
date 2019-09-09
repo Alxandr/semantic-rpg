@@ -1,0 +1,20 @@
+[package]
+name = "semantic-rpg"
+version = "0.1.0"
+authors = ["Aleksander Heintz <alxandr@alxandr.me>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+id-arena = { version = "2", features = ["rayon"] }
+nom = "5"
+itertools = "0.8"
+rio_api = "0.3"
+rio_turtle = "0.3"
+rio_xml = "0.3"
+curie = "0.1"
+auto_enums = "0.6"
+
+[workspace]
+members = ["skorm-curie"]

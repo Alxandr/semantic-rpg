@@ -1,0 +1,5 @@
+:core-rule-book a pf2:Source ;
+                schema:name "Pathfinder Core Rulebook" ;
+                schema:sameAs <https://paizo.com/products/btq01y0k> ;
+                schema:publisher "https://paizo.com/" .
+

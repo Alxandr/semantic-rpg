@@ -1,0 +1,4 @@
+:Definition a rdfs:Class ;
+        rdfs:label "Definition" ;
+        rdfs:comment "Rule definition." ;
+        rdfs:subClassOf schema:Thing .

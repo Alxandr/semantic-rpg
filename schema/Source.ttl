@@ -1,0 +1,4 @@
+:Source a rdfs:Class ;
+        rdfs:label "Source" ;
+        rdfs:comment "Source containing game rules." ;
+        rdfs:subClassOf schema:CreativeWork .

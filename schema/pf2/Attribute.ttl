@@ -1,0 +1,4 @@
+:Attribute a rdfs:Class ;
+        rdfs:label "Attribute" ;
+        rdfs:comment "Attribute definition." ;
+        rdfs:subClassOf pf2s:Definition .
