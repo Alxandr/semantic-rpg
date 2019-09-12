@@ -418,6 +418,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "skorm-uri"
+version = "0.1.0"
+dependencies = [
+ "evitable 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nom 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "stackvector"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

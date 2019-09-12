@@ -1,0 +1,83 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'skorm-curie'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=skorm-curie"
+        ],
+        "filter": {
+          "name": "skorm-curie",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'skorm-uri'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=skorm-uri"
+        ],
+        "filter": {
+          "name": "skorm-uri",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'semantic-rpg'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=semantic-rpg",
+          "--package=semantic-rpg"
+        ],
+        "filter": {
+          "name": "semantic-rpg",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'semantic-rpg'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=semantic-rpg",
+          "--package=semantic-rpg"
+        ],
+        "filter": {
+          "name": "semantic-rpg",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
