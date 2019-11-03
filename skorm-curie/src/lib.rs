@@ -1,6 +1,6 @@
 use evitable::*;
 use indexmap::IndexMap;
-use iri_string::types::{IriStr, IriString};
+use skorm_iri::{try_parse, Iri, IriBorrowed, IriBuf};
 use std::borrow::Cow;
 
 #[evitable]
@@ -14,12 +14,8 @@ pub enum Context {
   #[evitable(description = "The prefix on the CURIE has no valid mapping.")]
   InvalidMapping,
 
-  #[evitable(description("Failed to parse IRI: \"{}\".", input))]
-  ParseError { input: String },
-}
-
-pub trait IntoIri {
-  fn into_iri(self) -> Result<IriString>;
+  #[evitable(description("Failed to parse IRI."))]
+  ParseError,
 }
 
 pub trait IntoCurie<'a, 'b> {
@@ -33,14 +29,14 @@ impl<'a, 'b, T: Into<Curie<'a, 'b>>> IntoCurie<'a, 'b> for T {
   }
 }
 
-impl<'a> IntoCurie<'a, 'a> for &'a IriStr {
+impl<'a> IntoCurie<'a, 'a> for &'a Iri {
   #[inline]
   fn into_curie(self) -> Result<Curie<'a, 'a>> {
     Ok(Curie::LongForm(Cow::Borrowed(self)))
   }
 }
 
-impl<'a, 'b> IntoCurie<'a, 'b> for IriString {
+impl<'a, 'b> IntoCurie<'a, 'b> for IriBuf {
   #[inline]
   fn into_curie(self) -> Result<Curie<'a, 'b>> {
     Ok(Curie::LongForm(Cow::Owned(self)))
@@ -49,27 +45,24 @@ impl<'a, 'b> IntoCurie<'a, 'b> for IriString {
 
 impl<'a> IntoCurie<'a, 'a> for &'a str {
   fn into_curie(self) -> Result<Curie<'a, 'a>> {
-    if self.contains("://") {
-      self
-        .parse::<IriString>()
-        .context(|| Context::ParseError {
-          input: self.to_owned(),
-        })
-        .map(|iri| Curie::LongForm(Cow::Owned(iri)))
-    } else {
-      if let Some(colon) = self.find(':') {
-        let (prefix, reference) = self.split_at(colon);
-        let (_, reference) = reference.split_at(1);
-        Ok(Curie::ShortForm {
-          prefix: Some(Cow::Borrowed(prefix)),
-          reference: Cow::Borrowed(reference),
-        })
-      } else {
-        Ok(Curie::ShortForm {
-          prefix: None,
-          reference: Cow::Borrowed(self),
-        })
+    if let Ok(iri) = try_parse(self) {
+      if iri.scheme() == "http" || iri.scheme() == "https" {
+        return Ok(Curie::LongForm(Cow::Owned(iri.to_owned())));
       }
+    }
+
+    if let Some(colon) = self.find(':') {
+      let (prefix, reference) = self.split_at(colon);
+      let (_, reference) = reference.split_at(1);
+      Ok(Curie::ShortForm {
+        prefix: Some(Cow::Borrowed(prefix)),
+        reference: Cow::Borrowed(reference),
+      })
+    } else {
+      Ok(Curie::ShortForm {
+        prefix: None,
+        reference: Cow::Borrowed(self),
+      })
     }
   }
 }
@@ -91,10 +84,23 @@ impl<'a> IntoCurie<'a, 'a> for String {
 ///
 /// let mut store = CurieStore::new();
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CurieStore {
   base: Option<String>,
   mappings: IndexMap<String, String>,
+}
+
+pub struct Iter<'a>(indexmap::map::Iter<'a, String, String>);
+
+impl<'a> Iterator for Iter<'a> {
+  type Item = (&'a str, &'a str);
+
+  fn next(&mut self) -> Option<Self::Item> {
+    match self.0.next() {
+      None => None,
+      Some((k, v)) => Some((&k, &v)),
+    }
+  }
 }
 
 impl CurieStore {
@@ -132,7 +138,11 @@ impl CurieStore {
   }
 
   /// Add a prefix to the mapping.
-  pub fn add_prefix(&mut self, prefix: impl Into<String>, value: impl Into<String>) -> Result<()> {
+  pub fn insert_prefix(
+    &mut self,
+    prefix: impl Into<String>,
+    value: impl Into<String>,
+  ) -> Result<()> {
     let prefix = prefix.into();
     ensure!(prefix != "_", Context::ReservedPrefix);
     ensure!(
@@ -144,8 +154,19 @@ impl CurieStore {
     Ok(())
   }
 
+  pub fn base(&self) -> Option<&str> {
+    match &self.base {
+      None => None,
+      Some(b) => Some(&b),
+    }
+  }
+
+  pub fn prefixes(&self) -> Iter {
+    Iter(self.mappings.iter())
+  }
+
   /// Expand a CURIE, returning a complete IRI.
-  pub fn expand<'b, 'c>(&self, curie: impl IntoCurie<'b, 'c>) -> Result<IriString> {
+  pub fn expand<'b, 'c>(&self, curie: impl IntoCurie<'b, 'c>) -> Result<IriBuf> {
     match curie.into_curie()? {
       Curie::LongForm(cow) => Ok(cow.into_owned()),
       Curie::ShortForm { prefix, reference } => {
@@ -154,9 +175,7 @@ impl CurieStore {
             let mut string = String::with_capacity(base.len() + reference.len());
             string.push_str(base);
             string.push_str(&reference);
-            let resolved = string
-              .parse::<IriString>()
-              .context(move || Context::ParseError { input: string })?;
+            let resolved = try_parse(string).context(move || Context::ParseError)?;
             Ok(resolved)
           } else {
             Err(Context::InvalidMapping.into())
@@ -165,9 +184,7 @@ impl CurieStore {
           let mut string = String::with_capacity(base.len() + reference.len());
           string.push_str(base);
           string.push_str(&reference);
-          let resolved = string
-            .parse::<IriString>()
-            .context(move || Context::ParseError { input: string })?;
+          let resolved = try_parse(string).context(move || Context::ParseError)?;
           Ok(resolved)
         } else {
           Err(Context::InvalidMapping.into())
@@ -176,7 +193,7 @@ impl CurieStore {
     }
   }
 
-  pub fn shrink<'a, 'b>(&'a self, iri: &'b IriStr) -> Result<Curie<'a, 'b>> {
+  pub fn shrink<'a, 'b>(&'a self, iri: &'b Iri) -> Result<Curie<'a, 'b>> {
     if let Some(base) = &self.base {
       if iri.as_str().starts_with(base.as_str()) {
         let reference = &iri.as_str()[base.as_str().len()..];
@@ -208,7 +225,7 @@ pub enum Curie<'a, 'b> {
     reference: Cow<'b, str>,
   },
 
-  LongForm(Cow<'b, IriStr>),
+  LongForm(Cow<'b, Iri>),
 }
 
 impl<'a, 'b> Curie<'a, 'b> {
@@ -240,7 +257,7 @@ impl<'a, 'b> Curie<'a, 'b> {
     }
   }
 
-  pub fn iri(&self) -> Option<&IriStr> {
+  pub fn iri(&self) -> Option<&Iri> {
     match self {
       Curie::ShortForm { .. } => None,
       Curie::LongForm(cow) => Some(cow.as_ref()),

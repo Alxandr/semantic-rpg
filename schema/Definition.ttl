@@ -1,14 +1,12 @@
 :Definition a rdfs:Class ;
         rdfs:label "Definition" ;
         rdfs:comment "Rule definition." ;
-        rdfs:subClassOf rpgs:Definition .
+        rdfs:subClassOf schema:Thing .
 
 :definedIn a rdf:Property ;
-        rdfs:subPropertyOf rpgs:definedIn ;
         rdfs:range :Source ;
         rdfs:domain :Definition .
 
 :pages a rdf:Property ;
-        rdfs:subPropertyOf rpgs:pages ;
         rdfs:range xsd:string ;
         rdfs:domain :Definition .

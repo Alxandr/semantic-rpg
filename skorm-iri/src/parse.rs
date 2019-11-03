@@ -13,6 +13,7 @@ use nom::{
 };
 use std::ops::{Range, RangeFrom};
 
+pub mod error;
 mod locate;
 
 struct Spanned<T> {
@@ -47,6 +48,22 @@ impl<T> Spanned<T> {
 
   fn into_range(self) -> Range<usize> {
     self.start..self.end
+  }
+}
+
+trait IResultExt<I, T, E: ParseError<I>>: Sized {
+  fn add_err_context(self, input: I, context: &'static str) -> Self;
+}
+
+impl<I, T, E: ParseError<I>> IResultExt<I, T, E> for IResult<I, T, E> {
+  #[inline]
+  fn add_err_context(self, input: I, context: &'static str) -> Self {
+    match self {
+      Ok(o) => Ok(o),
+      Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+      Err(Err::Error(e)) => Err(Err::Error(E::add_context(input, context, e))),
+      Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input, context, e))),
+    }
   }
 }
 
@@ -85,18 +102,21 @@ fn ignore<I, T, E: ParseError<I>>(
   }
 }
 
-fn exact<I: InputLength, T, E: ParseError<I>>(
+fn exact<I: InputLength + Clone, T, E: ParseError<I>>(
   parser: impl Fn(I) -> IResult<I, T, E>,
 ) -> impl Fn(I) -> IResult<I, T, E> {
-  move |input| match parser(input) {
-    Ok((i, v)) => {
-      if i.input_len() == 0 {
-        Ok((i, v))
-      } else {
-        Err(Err::Error(E::from_error_kind(i, ErrorKind::NonEmpty)))
+  move |input| {
+    let cloned = input.clone();
+    match parser(input) {
+      Ok((i, v)) => {
+        if i.input_len() == 0 {
+          Ok((i, v))
+        } else {
+          Err(Err::Error(E::from_error_kind(i, ErrorKind::NonEmpty)))
+        }
       }
+      Err(e) => Err(e).add_err_context(cloned, "exact"),
     }
-    Err(e) => Err(e),
   }
 }
 
@@ -129,7 +149,7 @@ macro_rules! char_parsers {
 
       pub(super) fn single<T, E: ParseError<T>>(input: T) -> IResult<T, char, E>
       where
-        T: Slice<RangeFrom<usize>> + InputIter,
+        T: Slice<RangeFrom<usize>> + InputIter + Clone,
         <T as InputIter>::Item: AsChar,
       {
         match input.iter_elements().next().map(|t| {
@@ -138,7 +158,14 @@ macro_rules! char_parsers {
           (c, b)
         }) {
           Some((c, true)) => Ok((input.slice(c.len()..), c)),
-          _ => Err(Err::Error(E::from_char(input, '_')))
+          _ => Err(
+            Err::Error(
+              E::add_context(
+                input.clone(),
+                stringify!($name::single),
+                E::from_error_kind(input, ErrorKind::NoneOf))
+              )
+            )
         }
       }
 
@@ -148,6 +175,7 @@ macro_rules! char_parsers {
         <T as InputTakeAtPosition>::Item: AsChar,
       {
         input.split_at_position_complete(is_not)
+          .add_err_context(input, stringify!($name::many0))
       }
 
       pub(super) fn many1<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -155,7 +183,8 @@ macro_rules! char_parsers {
         T: InputTakeAtPosition + InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
       {
-        input.split_at_position1_complete(is_not, ErrorKind::Char)
+        input.split_at_position1_complete(is_not, ErrorKind::NoneOf)
+          .add_err_context(input, stringify!($name::many1))
       }
     }
   };
@@ -214,7 +243,7 @@ char_parsers! {
 
 fn pct_encoded<T, E: ParseError<T>>(input: T) -> IResult<T, u8, E>
 where
-  T: Slice<RangeFrom<usize>> + InputIter,
+  T: Slice<RangeFrom<usize>> + InputIter + Clone,
   <T as InputIter>::Item: AsChar,
 {
   #[inline]
@@ -243,7 +272,11 @@ where
 
   match result {
     Some((pos, num)) => Ok((input.slice(pos..), num)),
-    None => Err(Err::Error(E::from_char(input, '_'))),
+    None => Err(Err::Error(E::from_error_kind(
+      input.clone(),
+      ErrorKind::Tag,
+    )))
+    .add_err_context(input, "pct_encoded"),
   }
 }
 
@@ -295,7 +328,7 @@ char_parsers! {
 
 fn dec_octet<T, E: ParseError<T>>(input: T) -> IResult<T, u8, E>
 where
-  T: Slice<RangeFrom<usize>> + InputIter,
+  T: Slice<RangeFrom<usize>> + InputIter + Clone,
   <T as InputIter>::Item: AsChar,
 {
   let mut iter = input.iter_indices().map(|(i, c)| (i, c.as_char()));
@@ -326,7 +359,11 @@ where
   if pos > 0 {
     Ok((input.slice(pos..), num as u8))
   } else {
-    Err(Err::Error(E::from_char(input, '_')))
+    Err(Err::Error(E::from_error_kind(
+      input.clone(),
+      ErrorKind::Digit,
+    )))
+    .add_err_context(input, "dec_octet")
   }
 }
 
@@ -342,7 +379,7 @@ where
   )))(input)
   {
     Ok((rest, spanned)) => Ok((rest, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ip4_address"),
   }
 }
 
@@ -363,7 +400,11 @@ where
       let pos = i + c.len();
       Ok(cloned.take_split(pos))
     }
-    None => Err(Err::Error(E::from_char(input, '_'))),
+    None => Err(Err::Error(E::from_error_kind(
+      input.clone(),
+      ErrorKind::HexDigit,
+    )))
+    .add_err_context(input, "h16"),
   }
 }
 
@@ -380,11 +421,12 @@ where
     let cloned = input.clone();
     match spanned(tuple((h16, char(':'), h16)))(input) {
       Ok((rest, spanned)) => Ok((rest, cloned.take(spanned.len()))),
-      Err(e) => Err(e),
+      Err(e) => Err(e).add_err_context(cloned, "ls32::h32"),
     }
   }
 
-  alt((h32, ip4_address))(input)
+  let cloned = input.clone();
+  alt((h32, ip4_address))(input).add_err_context(cloned, "ls32")
 }
 
 //   IPv6address    =                            6( h16 ":" ) ls32
@@ -432,7 +474,7 @@ where
   let cloned = input.clone();
   match spanned(addr)(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ip6_address"),
   }
 }
 
@@ -463,7 +505,7 @@ where
   let cloned = input.clone();
   match spanned(full)(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ipvfuture_address"),
   }
 }
 
@@ -487,16 +529,17 @@ where
   let cloned = input.clone();
   match spanned(outer)(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ip_literal"),
   }
 }
 
 fn port<T, E: ParseError<T>>(input: T) -> IResult<T, Spanned<T>, E>
 where
-  T: InputTakeAtPosition + InputLocate,
+  T: InputTakeAtPosition + InputLocate + Clone,
   <T as InputTakeAtPosition>::Item: AsChar,
 {
-  spanned(digit0)(input)
+  let cloned = input.clone();
+  spanned(digit0)(input).add_err_context(cloned, "port")
 }
 
 fn scheme<T, E: ParseError<T>>(input: T) -> IResult<T, Spanned<T>, E>
@@ -527,7 +570,7 @@ where
   let cloned = input.clone();
   match spanned(full)(input) {
     Ok((i, spanned)) => Ok((i, spanned.with_value(cloned.take(spanned.len())))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "scheme"),
   }
 }
 
@@ -566,7 +609,8 @@ mod ipchar {
       Err(e) => Err(e),
     };
 
-    alt((ip_char, pct))(input)
+    let cloned = input.clone();
+    alt((ip_char, pct))(input).add_err_context(cloned, "ipchar::single")
   }
 
   pub(super) fn many0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -587,7 +631,7 @@ mod ipchar {
     let cloned = input.clone();
     match spanned(super::many0(inner))(input) {
       Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-      Err(e) => Err(e),
+      Err(e) => Err(e).add_err_context(cloned, "ipchar::many0"),
     }
   }
 
@@ -608,7 +652,7 @@ mod ipchar {
     let cloned = input.clone();
     match spanned(super::many1(inner))(input) {
       Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-      Err(e) => Err(e),
+      Err(e) => Err(e).add_err_context(cloned, "ipchar::many1"),
     }
   }
 }
@@ -631,8 +675,8 @@ where
 
   let cloned = input.clone();
   match spanned(many0(inner))(input) {
-    Ok((i, spanned)) => Ok((dbg!(i), cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
+    Err(e) => Err(e).add_err_context(cloned, "ifragment"),
   }
 }
 
@@ -659,8 +703,8 @@ where
 
   let cloned = input.clone();
   match spanned(many0(inner))(input) {
-    Ok((i, spanned)) => Ok((dbg!(i), cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
+    Err(e) => Err(e).add_err_context(cloned, "iquery"),
   }
 }
 
@@ -705,7 +749,8 @@ where
   <T as InputTakeAtPosition>::Item: AsChar,
   <T as InputIter>::Item: AsChar,
 {
-  ipchar::many1(input)
+  let cloned = input.clone();
+  ipchar::many1(input).add_err_context(cloned, "isegment_nz")
 }
 
 fn isegment<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -722,7 +767,8 @@ where
   <T as InputTakeAtPosition>::Item: AsChar,
   <T as InputIter>::Item: AsChar,
 {
-  ipchar::many0(input)
+  let cloned = input.clone();
+  ipchar::many0(input).add_err_context(cloned, "isegment")
 }
 
 fn ipath_empty<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -753,7 +799,7 @@ where
   let cloned = input.clone();
   match spanned(full)(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ipath_rootless"),
   }
 }
 
@@ -802,7 +848,7 @@ where
   let cloned = input.clone();
   match spanned(full)(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ipath_absolute"),
   }
 }
 
@@ -820,13 +866,12 @@ where
   <T as InputTakeAtPosition>::Item: AsChar,
   <T as InputIter>::Item: AsChar,
 {
-  dbg!(&input);
   // *( "/" isegment )
   let inner = tuple((char('/'), isegment));
   let cloned = input.clone();
   match spanned(many0(inner))(input) {
-    Ok((i, spanned)) => Ok((dbg!(i), cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
+    Err(e) => Err(e).add_err_context(cloned, "ipath_abempty"),
   }
 }
 
@@ -875,7 +920,7 @@ where
   let cloned = input.clone();
   match spanned(many0(inner))(input) {
     Ok((i, spanned)) => Ok((i, cloned.take(spanned.len()))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ireg_name"),
   }
 }
 
@@ -893,7 +938,8 @@ where
   <T as InputTakeAtPosition>::Item: AsChar,
   <T as InputIter>::Item: AsChar,
 {
-  spanned(alt((ip_literal, ip4_address, ireg_name)))(input)
+  let cloned = input.clone();
+  spanned(alt((ip_literal, ip4_address, ireg_name)))(input).add_err_context(cloned, "ihost")
 }
 
 fn iuserinfo<T, E: ParseError<T>>(input: T) -> IResult<T, Spanned<T>, E>
@@ -919,7 +965,7 @@ where
   let cloned = input.clone();
   match spanned(many0(inner))(input) {
     Ok((i, spanned)) => Ok((i, spanned.input(&cloned))),
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "iuserinfo"),
   }
 }
 
@@ -954,7 +1000,6 @@ where
   let cloned = input.clone();
   match spanned(full)(input) {
     Ok((i, spanned)) => {
-      dbg!(&i);
       let value = spanned.input(&cloned);
       let (userinfo, host, port) = spanned.value;
       let authority = Authority {
@@ -966,7 +1011,7 @@ where
       Ok((i, authority))
     }
 
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "iauthority"),
   }
 }
 
@@ -1058,7 +1103,7 @@ where
   let alt4 = map(spanned(ipath_empty), |path| (None, path));
   let parser = alt((alt1, alt2, alt3, alt4));
 
-  // let cloned = input.clone();
+  let cloned = input.clone();
   match spanned(parser)(input) {
     Ok((i, spanned)) => {
       // let value = spanned.input(&cloned);
@@ -1073,7 +1118,7 @@ where
         },
       ))
     }
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "ihier_part"),
   }
 }
 
@@ -1148,6 +1193,7 @@ where
   let fragment = opt(preceded(char('#'), spanned(ifragment)));
   let parser = tuple((scheme, char(':'), ihier_part, query, fragment));
 
+  let cloned = input.clone();
   match parser(input) {
     Ok((i, value)) => {
       let (scheme, _, hier_part, query, fragment) = value;
@@ -1164,12 +1210,21 @@ where
       Ok((i, info))
     }
 
-    Err(e) => Err(e),
+    Err(e) => Err(e).add_err_context(cloned, "iri"),
   }
 }
 
-pub fn try_parse<I: IntoIri>(s: I) -> Result<<I as IntoIri>::Iri, String> {
-  _try_parse(s.borrow()).map(move |ranges| s.into_iri(ranges))
+pub fn try_parse<I: IntoIri>(s: I) -> Result<<I as IntoIri>::Iri, error::Error> {
+  match _try_parse(s.borrow()) {
+    Ok(frames) => Ok(s.into_iri(frames)),
+    Err(error) => Err(
+      error::Context {
+        source: s.borrow().into(),
+        error: error,
+      }
+      .into(),
+    ),
+  }
 }
 
 fn _try_parse(iri_str: &str) -> Result<IriRanges, String> {
@@ -1218,7 +1273,6 @@ fn _try_parse(iri_str: &str) -> Result<IriRanges, String> {
         .map(|(i, kind)| (i.into_inner(), kind))
         .collect();
       let e = VerboseError { errors };
-      dbg!(&e);
       Err(convert_error(iri_str, e))
     }
     Err(Err::Failure(_)) => panic!("parser failure."),

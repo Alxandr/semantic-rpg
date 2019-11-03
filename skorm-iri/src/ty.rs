@@ -1,3 +1,4 @@
+use static_assertions::{assert_eq_align, assert_eq_size};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::fmt;
@@ -103,10 +104,18 @@ struct IriHeader {
   ptr: *const str,
 }
 
+impl IriHeader {
+  fn as_iri(&self) -> &Iri {
+    assert_eq_align!(*const IriHeader, *const Iri);
+    assert_eq_size!(*const IriHeader, *const Iri);
+    let ptr = self as *const IriHeader as *const Iri;
+    unsafe { &*ptr }
+  }
+}
+
 impl Debug for IriHeader {
   fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-    let ptr = self as *const IriHeader as *const IriStr;
-    let s: &IriStr = unsafe { &*ptr };
+    let s = self.as_iri();
 
     f.debug_struct("Iri")
       .field("iri", &s.as_str())
@@ -129,26 +138,33 @@ impl AsRef<str> for IriHeader {
   }
 }
 
-pub struct IriString {
+pub struct IriBuf {
   header: IriHeader,
   content: String,
 }
 
-impl AsRef<IriHeader> for IriString {
+impl Clone for IriBuf {
+  #[inline]
+  fn clone(&self) -> Self {
+    Borrow::<Iri>::borrow(self).to_owned()
+  }
+}
+
+impl AsRef<IriHeader> for IriBuf {
   #[inline]
   fn as_ref(&self) -> &IriHeader {
     &self.header
   }
 }
 
-impl AsRef<str> for IriString {
+impl AsRef<str> for IriBuf {
   #[inline]
   fn as_ref(&self) -> &str {
     &self.content
   }
 }
 
-impl_iri_type!(IriString);
+impl_iri_type!(IriBuf);
 
 extern "C" {
   /// A dummy type used to force Slice to by unsized without requiring fat pointers
@@ -156,26 +172,26 @@ extern "C" {
 }
 
 #[repr(C)]
-pub struct IriStr {
+pub struct Iri {
   header: IriHeader,
   opaque: OpaqueSliceContents,
 }
 
-impl AsRef<IriHeader> for IriStr {
+impl AsRef<IriHeader> for Iri {
   #[inline]
   fn as_ref(&self) -> &IriHeader {
     &self.header
   }
 }
 
-impl AsRef<str> for IriStr {
+impl AsRef<str> for Iri {
   #[inline]
   fn as_ref(&self) -> &str {
     self.header.as_ref()
   }
 }
 
-impl IriStr {
+impl Iri {
   #[inline]
   pub fn as_str(&self) -> &str {
     self.as_ref()
@@ -227,38 +243,37 @@ impl IriStr {
   }
 }
 
-impl_iri_type!(IriStr);
+impl_iri_type!(Iri);
 
-impl AsRef<IriStr> for IriString {
+impl AsRef<Iri> for IriBuf {
   #[inline]
-  fn as_ref(&self) -> &IriStr {
-    let ptr = &self.header as *const IriHeader as *const IriStr;
-    unsafe { &*ptr }
+  fn as_ref(&self) -> &Iri {
+    self.header.as_iri()
   }
 }
 
-impl Borrow<IriStr> for IriString {
+impl Borrow<Iri> for IriBuf {
   #[inline]
-  fn borrow(&self) -> &IriStr {
+  fn borrow(&self) -> &Iri {
     self.as_ref()
   }
 }
 
-impl Deref for IriString {
-  type Target = IriStr;
+impl Deref for IriBuf {
+  type Target = Iri;
 
   #[inline]
-  fn deref(&self) -> &IriStr {
+  fn deref(&self) -> &Iri {
     self.borrow()
   }
 }
 
-impl ToOwned for IriStr {
-  type Owned = IriString;
+impl ToOwned for Iri {
+  type Owned = IriBuf;
 
   fn to_owned(&self) -> Self::Owned {
     let content = self.header.as_ref().to_owned();
-    IriString::new(content, self.header.ranges.clone())
+    IriBuf::new(content, self.header.ranges.clone())
   }
 }
 
@@ -268,10 +283,10 @@ pub struct IriBorrowed<'a> {
 }
 
 impl<'a> IriBorrowed<'a> {
-  pub fn to_owned(&self) -> IriString {
+  pub fn to_owned(&self) -> IriBuf {
     let ranges = self.header.ranges.clone();
     let content = self.content.to_owned();
-    IriString::new(content, ranges)
+    IriBuf::new(content, ranges)
   }
 }
 
@@ -304,37 +319,36 @@ impl<'a> AsRef<str> for IriBorrowed<'a> {
 
 impl_iri_type!(IriBorrowed<'a>, 'a);
 
-impl<'a> AsRef<IriStr> for IriBorrowed<'a> {
+impl<'a> AsRef<Iri> for IriBorrowed<'a> {
   #[inline]
-  fn as_ref(&self) -> &IriStr {
-    let ptr = &self.header as *const IriHeader as *const IriStr;
-    unsafe { &*ptr }
+  fn as_ref(&self) -> &Iri {
+    self.header.as_iri()
   }
 }
 
-impl<'a> Borrow<IriStr> for IriBorrowed<'a> {
+impl<'a> Borrow<Iri> for IriBorrowed<'a> {
   #[inline]
-  fn borrow(&self) -> &IriStr {
+  fn borrow(&self) -> &Iri {
     self.as_ref()
   }
 }
 
 impl<'a> Deref for IriBorrowed<'a> {
-  type Target = IriStr;
+  type Target = Iri;
 
   #[inline]
-  fn deref(&self) -> &IriStr {
+  fn deref(&self) -> &Iri {
     self.borrow()
   }
 }
 
 pub trait IntoIri: Borrow<str> {
-  type Iri: Deref<Target = IriStr>;
+  type Iri: Deref<Target = Iri>;
 
   fn into_iri(self, ranges: IriRanges) -> Self::Iri;
 }
 
-impl IriString {
+impl IriBuf {
   fn new(content: String, ranges: IriRanges) -> Self {
     let ptr = as_str!(&content) as *const str;
     let header = IriHeader { ptr, ranges };
@@ -351,11 +365,11 @@ impl<'a> IriBorrowed<'a> {
 }
 
 impl IntoIri for String {
-  type Iri = IriString;
+  type Iri = IriBuf;
 
   #[inline]
   fn into_iri(self, ranges: IriRanges) -> Self::Iri {
-    IriString::new(self, ranges)
+    IriBuf::new(self, ranges)
   }
 }
 
@@ -367,24 +381,3 @@ impl<'a> IntoIri for &'a str {
     IriBorrowed::new(self, ranges)
   }
 }
-
-// #[cfg(test)]
-// mod tests {
-//   use super::*;
-
-//   #[test]
-//   fn it_works() {
-//     let header_ref_size = std::mem::size_of::<&IriHeader>();
-//     let iristr_ref_size = std::mem::size_of::<&IriStr>();
-//     assert_eq!(header_ref_size, iristr_ref_size);
-
-//     let ranges = IriRanges { scheme: 0..4 };
-//     let owned = IriString::new("http://schema.org/Person".into(), ranges);
-//     let borrowed: &IriStr = &owned;
-//     let inner: &str = borrowed.as_ref();
-//     assert_eq!(owned, "http://schema.org/Person");
-//     assert_eq!(borrowed, "http://schema.org/Person");
-//     assert_eq!(inner, "http://schema.org/Person");
-//     assert_eq!(2 + 2, 4);
-//   }
-// }

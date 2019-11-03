@@ -3,8 +3,11 @@
 mod parse;
 mod ty;
 
-pub use parse::try_parse;
-pub use ty::{IriBorrowed, IriStr, IriString};
+pub use parse::{
+  error::{Error, ErrorKind},
+  try_parse,
+};
+pub use ty::{IntoIri, Iri, IriBorrowed, IriBuf};
 
 #[cfg(test)]
 mod tests {
