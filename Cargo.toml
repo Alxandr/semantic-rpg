@@ -13,7 +13,7 @@ evitable = "0.3"
 extend = "0.0"
 id-arena = { version = "2" }
 itertools = "0.8"
-nom = "5"
+nom = "6"
 rio_api = "0.3"
 rio_turtle = "0.3"
 tracing = "0.1"
