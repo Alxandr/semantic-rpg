@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 skorm-iri = { version = "0.1", path = "../skorm-iri" }
-rio_api = "0.3"
+rio_api = "0.5"
