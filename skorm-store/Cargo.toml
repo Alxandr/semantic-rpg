@@ -11,4 +11,4 @@ skorm-core = { version = "0.1", path = "../skorm-core" }
 skorm-iri = { version = "0.1", path = "../skorm-iri" }
 skorm-curie = { version = "0.1", path = "../skorm-curie" }
 id-arena = { version = "2" }
-evitable = "0.3"
+evitable = "0.5"
