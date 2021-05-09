@@ -15,7 +15,7 @@ id-arena = { version = "2" }
 itertools = "0.8"
 nom = "5"
 rio_api = "0.3"
-rio_turtle = "0.3"
+rio_turtle = "0.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.1", features = ["parking_lot"] }
 skorm-iri = { version = "0.1", path = "./skorm-iri" }
