@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 auto_enums = "0.6"
 curie = "0.1"
-evitable = "0.3"
+evitable = "0.5"
 extend = "1.0"
 id-arena = { version = "2" }
 itertools = "0.8"

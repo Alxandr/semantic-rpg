@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 indexmap = "1"
-evitable = "0.3"
+evitable = "0.5"
 skorm-iri = { version = "0.1", path = "../skorm-iri" }
