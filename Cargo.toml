@@ -17,7 +17,7 @@ nom = "5"
 rio_api = "0.3"
 rio_turtle = "0.3"
 tracing = "0.1"
-tracing-subscriber = { version = "0.1", features = ["parking_lot"] }
+tracing-subscriber = { version = "0.2", features = ["parking_lot"] }
 skorm-iri = { version = "0.1", path = "./skorm-iri" }
 skorm-curie = { version = "0.1", path = "./skorm-curie" }
 skorm-store = { version = "0.1", path = "./skorm-store" }
