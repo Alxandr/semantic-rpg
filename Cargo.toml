@@ -12,7 +12,7 @@ curie = "0.1"
 evitable = "0.3"
 extend = "1.0"
 id-arena = { version = "2" }
-itertools = "0.8"
+itertools = "0.10"
 nom = "5"
 rio_api = "0.3"
 rio_turtle = "0.3"
